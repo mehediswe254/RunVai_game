@@ -174,7 +174,24 @@
     }
 
     function resizeCanvas() {
-        /* Canvas scales responsively; game coordinates remain fixed */
+        /* The game world stays at 960x540; CSS fits it to portrait or landscape. */
+    }
+
+    async function enterFullscreen() {
+        const target = document.querySelector('.game-shell');
+        try {
+            if (!document.fullscreenElement && target.requestFullscreen) {
+                await target.requestFullscreen();
+            }
+        } catch (error) {
+            // Some mobile browsers require fullscreen to be enabled by browser settings.
+        }
+    }
+
+    function exitFullscreen() {
+        if (document.fullscreenElement && document.exitFullscreen) {
+            document.exitFullscreen().catch(() => {});
+        }
     }
 
     // ================= GAME CONTROL =================
@@ -207,11 +224,11 @@
         running = true;
         paused = false;
 
-        $('game-shell');
-
         document
             .querySelector('.game-shell')
             .classList.add('playing');
+
+        enterFullscreen();
 
         show('');
 
@@ -829,6 +846,7 @@
             .querySelector('.game-shell')
             .classList.remove('playing');
 
+        exitFullscreen();
         show('menuScreen');
     };
 
@@ -871,38 +889,58 @@
         }
     });
 
-    // ================= TOUCH CONTROLS =================
+    // ================= TOUCH ANYWHERE CONTROLS =================
 
-    let touchStart = 0;
+    const gameShell = document.querySelector('.game-shell');
+    let pointerStart = null;
 
-    canvas.addEventListener('touchstart', e => {
-        touchStart = e.changedTouches[0].clientY;
-    }, {
-        passive: true
+    gameShell.addEventListener('pointerdown', e => {
+        if (!running || paused) return;
+        if (e.target.closest('button, input, label, .screen, .touch-controls')) return;
+        pointerStart = { x: e.clientX, y: e.clientY, id: e.pointerId };
+        if (gameShell.setPointerCapture) {
+            try { gameShell.setPointerCapture(e.pointerId); } catch (error) {}
+        }
+        e.preventDefault();
     });
 
-    canvas.addEventListener('touchend', e => {
-        let dy = e.changedTouches[0].clientY - touchStart;
+    gameShell.addEventListener('pointerup', e => {
+        if (!pointerStart || pointerStart.id !== e.pointerId) return;
+        const dx = e.clientX - pointerStart.x;
+        const dy = e.clientY - pointerStart.y;
+        pointerStart = null;
 
-        if (dy < -18) {
+        if (!running || paused) return;
+        if (Math.abs(dy) > 18 && Math.abs(dy) > Math.abs(dx)) {
+            if (dy < 0) jump();
+            else slide();
+        } else if (Math.abs(dx) < 35 && Math.abs(dy) < 35) {
             jump();
+        }
+        e.preventDefault();
+    });
 
-        } else if (dy > 18) {
-            slide();
+    gameShell.addEventListener('pointercancel', () => {
+        pointerStart = null;
+    });
 
+    $('fullscreenBtn').onclick = async () => {
+        if (document.fullscreenElement) {
+            exitFullscreen();
         } else {
-            jump();
+            await enterFullscreen();
         }
-    }, {
-        passive: true
+    };
+
+    document.addEventListener('fullscreenchange', () => {
+        const btn = $('fullscreenBtn');
+        btn.textContent = document.fullscreenElement ? '⛶' : '⛶';
+        resizeCanvas();
     });
 
-    // ================= MOUSE CONTROLS =================
-
-    canvas.addEventListener('pointerdown', e => {
-        if (e.pointerType === 'mouse' && running && !paused) {
-            jump();
-        }
+    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('orientationchange', () => {
+        setTimeout(resizeCanvas, 150);
     });
 
     // ================= INITIALIZATION =================
